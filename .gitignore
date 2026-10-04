@@ -1,0 +1,21 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+coverage.txt
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.claude
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
