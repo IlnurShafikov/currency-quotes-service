@@ -11,7 +11,7 @@ CREATE TABLE quotes (
     price          NUMERIC(38, 18) NOT NULL CHECK (price > 0),
     obtained_at    TIMESTAMPTZ NOT NULL,
 
-    CHECK (base_currency <> quote_currency)
+    CONSTRAINT quotes_distinct_currencies CHECK (base_currency <> quote_currency)
 );
 
 CREATE INDEX quotes_latest_idx
@@ -30,10 +30,14 @@ CREATE TABLE quote_update_requests (
     started_at     TIMESTAMPTZ,
     finished_at    TIMESTAMPTZ,
 
-    CHECK (base_currency <> quote_currency),
-    CHECK ((status = 'completed') = (quote_id IS NOT NULL)),
-    CHECK ((status = 'failed') = (error IS NOT NULL)),
-    CHECK ((status = 'pending') = (finished_at IS NULL))
+    CONSTRAINT quote_update_requests_distinct_currencies
+        CHECK (base_currency <> quote_currency),
+    CONSTRAINT quote_update_requests_completed_has_quote
+        CHECK ((status = 'completed') = (quote_id IS NOT NULL)),
+    CONSTRAINT quote_update_requests_failed_has_error
+        CHECK ((status = 'failed') = (error IS NOT NULL)),
+    CONSTRAINT quote_update_requests_pending_not_finished
+        CHECK ((status = 'pending') = (finished_at IS NULL))
 );
 
 -- Idempotency: at most one active (pending) request per currency pair.
