@@ -1,0 +1,76 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    # Bugs
+    - bodyclose       # HTTP response bodies must be closed
+    - contextcheck    # a received context must be passed down, not replaced
+    - durationcheck   # catches time.Duration * time.Duration
+    - errorlint       # errors must be compared with errors.Is / errors.As
+    - exhaustive      # switch over an enum must cover every value
+    - nilerr          # returning nil after checking err != nil
+    - noctx           # HTTP requests must carry a context
+    - rowserrcheck    # sql rows.Err() must be checked
+    - sqlclosecheck   # sql rows and statements must be closed
+    - gosec           # common security mistakes
+    # Error handling
+    - err113          # sentinel errors instead of ad-hoc errors.New / comparing strings
+    - errname         # sentinel errors are named ErrXxx, error types XxxError
+    - wrapcheck       # errors from other packages must be wrapped with context
+    # Style and simplicity
+    - copyloopvar     # redundant loop variable copies (Go 1.22+)
+    - funlen          # overly long functions
+    - gocritic        # assorted correctness and style checks
+    - intrange        # for i := range n instead of a three-clause loop
+    - misspell        # typos in comments and strings
+    - nolintlint      # //nolint must name the linter and give a reason
+    - perfsprint      # fmt.Sprintf where a cheaper alternative exists
+    - revive          # golint successor: naming, exported comments
+    - unconvert       # unnecessary type conversions
+    - unparam         # unused function parameters and results
+    - usestdlibvars   # http.MethodGet instead of "GET", etc.
+    # Tests
+    - paralleltest    # tests and subtests must call t.Parallel
+    - testifylint     # correct use of testify assertions
+    - thelper         # test helpers must call t.Helper
+    - tparallel       # consistent use of t.Parallel in subtests
+
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    funlen:
+      lines: 60
+      statements: 40
+      ignore-comments: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # struct field order is chosen for readability
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    rules:
+      # Table-driven tests are long by design and may build ad-hoc errors.
+      - path: _test\.go
+        linters:
+          - err113
+          - funlen
+          - wrapcheck
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/IlnurShafikov/currency-quotes-service)
