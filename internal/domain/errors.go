@@ -23,4 +23,12 @@ var (
 	// ErrEmptyFailureReason is returned when an update request is failed
 	// without a reason.
 	ErrEmptyFailureReason = errors.New("failure reason must not be empty")
+	// ErrUnsupportedCurrency is returned when a currency code is valid but
+	// the service does not provide quotes for it.
+	ErrUnsupportedCurrency = errors.New("currency is not supported")
+	// ErrUpdateNotFound is returned when no update request has the given identifier.
+	ErrUpdateNotFound = errors.New("update request not found")
+	// ErrQuoteNotFound is returned when no quote matches the lookup, e.g. a
+	// pair has never been updated successfully.
+	ErrQuoteNotFound = errors.New("quote not found")
 )
