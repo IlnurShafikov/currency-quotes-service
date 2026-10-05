@@ -19,6 +19,10 @@ var (
 	thirdQuoteID  = domain.QuoteID(uuid.MustParse("0199b0c2-af61-7d43-829e-6e4f5f718c93"))
 	unknownQuote  = domain.QuoteID(uuid.MustParse("0199b0c2-ffff-7fff-bfff-ffffffffffff"))
 
+	firstUpdateID  = domain.UpdateID(uuid.MustParse("0199b0c2-7c3e-7a10-9f6b-3b1d2c4e5f60"))
+	secondUpdateID = domain.UpdateID(uuid.MustParse("0199b0c2-7d4f-7b21-a07c-4c2e3d5f6a71"))
+	thirdUpdateID  = domain.UpdateID(uuid.MustParse("0199b0c2-7e50-7c32-b18d-5d3f4e607b82"))
+
 	eurMXN = domain.Pair{Base: "EUR", Quote: "MXN"}
 	mxnEUR = domain.Pair{Base: "MXN", Quote: "EUR"}
 	usdMXN = domain.Pair{Base: "USD", Quote: "MXN"}
