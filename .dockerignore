@@ -1,0 +1,16 @@
+# Keep the build context small and the image free of anything the binary
+# does not need. The migrations directory stays: it is embedded into the binary.
+.git
+.github
+.idea
+.vscode
+.env
+.env.*
+*.md
+api
+bin
+Dockerfile
+docker-compose.yml
+.dockerignore
+.gitignore
+.golangci.yml
