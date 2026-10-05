@@ -20,16 +20,22 @@ import (
 // PostgreSQL server the integration tests may use.
 const testDSNEnv = "TEST_DATABASE_URL"
 
+// ciEnv names the environment variable that CI systems, GitHub Actions
+// among them, set to a non-empty value.
+const ciEnv = "CI"
+
 // newTestDB returns a DB connected to a fresh schema with all migrations
 // applied. Every test gets its own schema, so tests can run in parallel and
 // never see each other's rows. The schema is dropped when the test ends.
 //
-// The test is skipped if TEST_DATABASE_URL is not set.
+// The test is skipped if TEST_DATABASE_URL is not set, except on CI, where a
+// missing database is a misconfiguration and fails the test instead.
 func newTestDB(t *testing.T) *DB {
 	t.Helper()
 
 	dsn := os.Getenv(testDSNEnv)
 	if dsn == "" {
+		require.Empty(t, os.Getenv(ciEnv), "%s must be set on CI: integration tests may not be skipped", testDSNEnv)
 		t.Skipf("%s is not set, skipping integration test", testDSNEnv)
 	}
 
