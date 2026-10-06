@@ -276,6 +276,10 @@ currency, add a migration that inserts it into the `currencies` table.
 
 ## Design decisions
 
+The most important decisions are below. The full list, with the alternatives
+that were considered and the cost of each choice, is in
+[docs/decisions.md](docs/decisions.md).
+
 **The database is the job queue.** The update request and the job are the same
 row, written by one `INSERT`, so a request can never be accepted without being
 queued. Pending work survives restarts and is shared between instances. A
@@ -318,6 +322,9 @@ matter are PostgreSQL-specific. Routing uses the standard library, which
 supports method and path patterns since Go 1.22.
 
 ## Limitations
+
+What could be done about each of these, and other possible improvements, is
+described in [docs/roadmap.md](docs/roadmap.md).
 
 - **Rates change once per working day.** The default provider,
   [Frankfurter](https://frankfurter.dev), publishes the reference rates of the
