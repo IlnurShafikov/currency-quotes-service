@@ -22,6 +22,7 @@ const (
 	EnvWorkerMaxAttempts = "WORKER_MAX_ATTEMPTS"
 	EnvWorkerTimeout     = "WORKER_TIMEOUT"
 	EnvWorkerStaleAfter  = "WORKER_STALE_AFTER"
+	EnvSchedulerInterval = "SCHEDULER_INTERVAL"
 )
 
 // Values used when a variable is not set.
@@ -36,6 +37,10 @@ const (
 	DefaultWorkerMaxAttempts = 3
 	DefaultWorkerTimeout     = 20 * time.Second
 	DefaultWorkerStaleAfter  = 30 * time.Second
+
+	// DefaultSchedulerInterval is zero: the scheduler is off unless an
+	// interval is configured.
+	DefaultSchedulerInterval time.Duration = 0
 )
 
 // Config is the configuration of the service.
@@ -67,6 +72,12 @@ type Config struct {
 	// WorkerStaleAfter is how long a claimed update is left to its worker
 	// before another worker may take it over.
 	WorkerStaleAfter time.Duration
+
+	// SchedulerInterval is how often stale quotes are refreshed without a
+	// client asking, and at the same time how old a quote may get before it
+	// counts as stale. Zero turns the scheduler off: quotes are then updated
+	// only on request.
+	SchedulerInterval time.Duration
 }
 
 // Load reads the configuration using getenv, which is normally [os.Getenv].
@@ -90,6 +101,7 @@ func Load(getenv func(string) string) (Config, error) {
 		WorkerMaxAttempts: env.count(EnvWorkerMaxAttempts, DefaultWorkerMaxAttempts),
 		WorkerTimeout:     env.duration(EnvWorkerTimeout, DefaultWorkerTimeout),
 		WorkerStaleAfter:  env.duration(EnvWorkerStaleAfter, DefaultWorkerStaleAfter),
+		SchedulerInterval: env.duration(EnvSchedulerInterval, DefaultSchedulerInterval),
 	}
 
 	if err := errors.Join(env.errs...); err != nil {

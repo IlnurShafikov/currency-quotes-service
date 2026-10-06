@@ -36,7 +36,6 @@ were going to production, the operations group would come first.
 | More currencies | Any ISO 4217 currency the provider knows. | A migration that inserts rows into `currencies`. |
 | Non-ISO assets | Crypto tickers such as `USDT`. | Relaxing `NewCurrency`; the schema already allows codes of up to 10 characters. |
 | Quote history | The `quotes` table already keeps every price obtained. | A read endpoint with a time range and pagination. |
-| Scheduled updates | Quotes refreshed periodically without a client asking. | A scheduler that calls `RequestUpdate`. Quotes do not depend on how they were requested, so nothing else changes. |
 
 ## API
 

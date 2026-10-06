@@ -27,6 +27,7 @@ func defaults() config.Config {
 		WorkerMaxAttempts: 3,
 		WorkerTimeout:     20 * time.Second,
 		WorkerStaleAfter:  30 * time.Second,
+		SchedulerInterval: 0,
 	}
 }
 
@@ -77,6 +78,7 @@ func TestLoad(t *testing.T) {
 				config.EnvWorkerMaxAttempts: "5",
 				config.EnvWorkerTimeout:     "15s",
 				config.EnvWorkerStaleAfter:  "45s",
+				config.EnvSchedulerInterval: "30m",
 			},
 			want: config.Config{
 				HTTPAddr:          "127.0.0.1:9090",
@@ -90,6 +92,7 @@ func TestLoad(t *testing.T) {
 				WorkerMaxAttempts: 5,
 				WorkerTimeout:     15 * time.Second,
 				WorkerStaleAfter:  45 * time.Second,
+				SchedulerInterval: 30 * time.Minute,
 			},
 			wantErr: nil,
 		},
@@ -144,6 +147,18 @@ func TestLoad(t *testing.T) {
 		{
 			name:    "count is negative",
 			env:     with(map[string]string{config.EnvWorkerBatchSize: "-5"}),
+			want:    config.Config{},
+			wantErr: config.ErrInvalidValue,
+		},
+		{
+			name:    "scheduler interval is not parsable",
+			env:     with(map[string]string{config.EnvSchedulerInterval: "hourly"}),
+			want:    config.Config{},
+			wantErr: config.ErrInvalidValue,
+		},
+		{
+			name:    "scheduler interval is zero: leave the variable unset to turn the scheduler off",
+			env:     with(map[string]string{config.EnvSchedulerInterval: "0s"}),
 			want:    config.Config{},
 			wantErr: config.ErrInvalidValue,
 		},

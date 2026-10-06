@@ -165,6 +165,19 @@ Several instances of the service can run against the same database: a request
 is claimed with `FOR UPDATE SKIP LOCKED`, so no two workers process the same
 one.
 
+### Scheduled refresh
+
+By default a quote is updated only when a client asks, so the latest quote of
+a pair is as old as the last update request for it. Setting
+`SCHEDULER_INTERVAL` turns on a scheduler that keeps quotes fresh on its own:
+on start-up and then every interval it requests an update for every supported
+pair whose latest quote is at least one interval old or missing.
+
+The scheduler does not fetch rates itself. It puts ordinary update requests
+into the same queue, and the worker carries them out exactly like requests
+from clients. With several instances, an instance that finds a quote already
+refreshed leaves it alone.
+
 ## Architecture
 
 The service follows the hexagonal (ports and adapters) style. The business
@@ -179,12 +192,15 @@ internal/
   service             use cases and the ports they depend on
   handler             driving adapter: HTTP API
   worker              driving adapter: background processing loop
+  scheduler           driving adapter: periodic refresh of stale quotes
   repository          driven adapter: PostgreSQL
   provider            driven adapter: external rate provider
   system              driven adapter: wall clock and id generator
   config              configuration from environment variables
 migrations            SQL migrations, embedded into the binary
 api                   OpenAPI specification
+postman               Postman collection with the main scenario and error cases
+docs                  design decisions and possible improvements
 ```
 
 Dependencies point inwards: adapters depend on `service` and `domain`,
@@ -209,6 +225,7 @@ required; Docker Compose sets it for you.
 | `WORKER_MAX_ATTEMPTS` | `3` | Attempts before an update is failed |
 | `WORKER_TIMEOUT` | `20s` | Deadline for processing one batch |
 | `WORKER_STALE_AFTER` | `30s` | When a claimed update may be taken over by another worker |
+| `SCHEDULER_INTERVAL` | off | How often stale quotes are refreshed without a client asking, e.g. `1h` |
 
 Durations use Go syntax: `500ms`, `10s`, `1m30s`.
 

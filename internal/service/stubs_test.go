@@ -49,10 +49,16 @@ func (s stubIDs) NewQuoteID() (domain.QuoteID, error) { return s.quoteID, s.quot
 type stubCurrencies struct {
 	supported bool
 	err       error
+	all       []domain.Currency // returned by All
+	allErr    error
 }
 
 func (s stubCurrencies) AllSupported(context.Context, ...domain.Currency) (bool, error) {
 	return s.supported, s.err
+}
+
+func (s stubCurrencies) All(context.Context) ([]domain.Currency, error) {
+	return s.all, s.allErr
 }
 
 // txKey marks a context as carrying a transaction of stubTx.
@@ -97,9 +103,10 @@ type stubUpdates struct {
 	finishErr error
 
 	mu              sync.Mutex
-	created         domain.UpdateRequest // argument of the last CreateOrGetPending call
-	gotID           domain.UpdateID      // argument of the last Get call
-	claimLimit      int                  // arguments of the last ClaimPending call
+	created         domain.UpdateRequest   // argument of the last CreateOrGetPending call
+	createdAll      []domain.UpdateRequest // arguments of every CreateOrGetPending call
+	gotID           domain.UpdateID        // argument of the last Get call
+	claimLimit      int                    // arguments of the last ClaimPending call
 	claimStaleAfter time.Duration
 	finished        []finishCall // successful Finish calls
 }
@@ -112,6 +119,7 @@ func (s *stubUpdates) CreateOrGetPending(
 	defer s.mu.Unlock()
 
 	s.created = req
+	s.createdAll = append(s.createdAll, req)
 
 	return s.stored, s.createErr
 }
@@ -159,7 +167,10 @@ type stubQuotes struct {
 	getErr    error
 	latest    domain.Quote // returned by Latest
 	latestErr error
-	saveErr   error
+	// latestByPair, when set, replaces latest: Latest returns the quote of
+	// the pair or ErrQuoteNotFound if the pair has none.
+	latestByPair map[domain.Pair]domain.Quote
+	saveErr      error
 
 	mu      sync.Mutex
 	gotID   domain.QuoteID // argument of the last Get call
@@ -195,7 +206,16 @@ func (s *stubQuotes) Latest(_ context.Context, pair domain.Pair) (domain.Quote, 
 
 	s.gotPair = pair
 
-	return s.latest, s.latestErr
+	if s.latestByPair == nil || s.latestErr != nil {
+		return s.latest, s.latestErr
+	}
+
+	quote, ok := s.latestByPair[pair]
+	if !ok {
+		return domain.Quote{}, domain.ErrQuoteNotFound
+	}
+
+	return quote, nil
 }
 
 // stubRates is a RateProvider that returns a preset rate and records how it
