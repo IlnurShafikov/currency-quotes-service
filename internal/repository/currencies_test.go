@@ -83,3 +83,39 @@ func TestCurrencies_AllSupported(t *testing.T) {
 		})
 	}
 }
+
+func TestCurrencies_All(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		ctx     func(t *testing.T) context.Context
+		want    []domain.Currency
+		wantErr error
+	}{
+		{
+			name:    "seeded currencies, ordered by code",
+			ctx:     liveContext,
+			want:    []domain.Currency{"EUR", "MXN", "USD"},
+			wantErr: nil,
+		},
+		{
+			name:    "query fails",
+			ctx:     cancelledContext,
+			want:    nil,
+			wantErr: context.Canceled,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			currencies := NewCurrencies(newTestDB(t))
+
+			got, err := currencies.All(tt.ctx(t))
+			assert.Equal(t, tt.want, got)
+			require.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}

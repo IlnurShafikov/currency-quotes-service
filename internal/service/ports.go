@@ -52,6 +52,8 @@ type QuoteRepository interface {
 type CurrencyRepository interface {
 	// AllSupported reports whether every one of the given currencies is supported.
 	AllSupported(ctx context.Context, currencies ...domain.Currency) (bool, error)
+	// All returns every supported currency.
+	All(ctx context.Context) ([]domain.Currency, error)
 }
 
 // RateProvider fetches current exchange rates from an external source.

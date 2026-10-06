@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/IlnurShafikov/currency-quotes-service/internal/domain"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/service"
 )
@@ -44,4 +46,21 @@ func (r *Currencies) AllSupported(ctx context.Context, currencies ...domain.Curr
 	}
 
 	return supported, nil
+}
+
+// All returns every supported currency, ordered by code.
+func (r *Currencies) All(ctx context.Context) ([]domain.Currency, error) {
+	const query = `SELECT code FROM currencies ORDER BY code`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("list supported currencies: %w", err)
+	}
+
+	currencies, err := pgx.CollectRows(rows, pgx.RowTo[domain.Currency])
+	if err != nil {
+		return nil, fmt.Errorf("list supported currencies: %w", err)
+	}
+
+	return currencies, nil
 }
