@@ -1,0 +1,382 @@
+openapi: 3.0.3
+
+info:
+  title: Currency Quotes Service
+  version: 1.0.0
+  description: |
+    Asynchronous currency quotes service.
+
+    Updating a quote takes two steps. A client first requests an update and
+    receives its identifier right away; the service fetches the price from an
+    external rate provider in the background. The client then reads the
+    result by that identifier, or reads the latest known quote of a pair.
+
+    Supported currencies: `USD`, `EUR`, `MXN`. Currency codes are
+    case-insensitive.
+
+    Prices are JSON strings, not numbers, so that clients do not lose
+    precision by parsing them as floating-point values.
+
+servers:
+  - url: http://localhost:8080
+    description: Local instance (docker compose up)
+
+tags:
+  - name: quotes
+    description: Quote updates and quotes
+  - name: service
+    description: Operational endpoints
+
+paths:
+  /api/v1/quotes/updates:
+    post:
+      tags: [quotes]
+      operationId: requestQuoteUpdate
+      summary: Request a quote update
+      description: |
+        Registers a request to update the quote of a currency pair and returns
+        its identifier. The update itself is carried out in the background.
+
+        The operation is idempotent: while an update for the pair is pending,
+        repeated requests return the identifier of that update instead of
+        creating a new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+            example:
+              base: EUR
+              quote: MXN
+      responses:
+        "202":
+          description: The update is accepted and will be carried out in the background.
+          headers:
+            Location:
+              description: Where to read the result of the update.
+              schema:
+                type: string
+              example: /api/v1/quotes/updates/01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateAccepted"
+              example:
+                update_id: 01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+        "400":
+          description: The request body is malformed or the currency pair is not acceptable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                malformedRequest:
+                  summary: Body is not the expected JSON object
+                  value:
+                    error:
+                      code: malformed_request
+                      message: request body must be a JSON object with "base" and "quote" fields
+                invalidCurrency:
+                  summary: Not an ISO 4217 currency code
+                  value:
+                    error:
+                      code: invalid_currency
+                      message: 'base currency: invalid currency code: "EURO"'
+                invalidPair:
+                  summary: Base and quote currencies are the same
+                  value:
+                    error:
+                      code: invalid_pair
+                      message: "currency pair: base and quote currencies must differ: EUR"
+                unsupportedCurrency:
+                  summary: The service has no quotes for the currency
+                  value:
+                    error:
+                      code: unsupported_currency
+                      message: "currency is not supported: EUR/JPY"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/quotes/updates/{id}:
+    get:
+      tags: [quotes]
+      operationId: getQuoteUpdate
+      summary: Get a quote update by its identifier
+      description: |
+        Returns the state of an update. Once the update is completed, the
+        response carries the price and the time it was obtained.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier returned when the update was requested.
+          schema:
+            type: string
+            format: uuid
+          example: 01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+      responses:
+        "200":
+          description: The current state of the update.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Update"
+              examples:
+                pending:
+                  summary: Not carried out yet
+                  value:
+                    update_id: 01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+                    base: EUR
+                    quote: MXN
+                    status: pending
+                completed:
+                  summary: Price obtained
+                  value:
+                    update_id: 01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+                    base: EUR
+                    quote: MXN
+                    status: completed
+                    price: "20.3348"
+                    updated_at: "2026-10-05T14:45:26.796602Z"
+                failed:
+                  summary: Price could not be obtained
+                  value:
+                    update_id: 01a10c86-d74e-7d7e-bf93-5c4d19c7a773
+                    base: EUR
+                    quote: MXN
+                    status: failed
+                    error: the quote could not be obtained from the rate provider
+        "400":
+          description: The identifier is not a UUID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: invalid_id
+                  message: 'invalid identifier: "42"'
+        "404":
+          description: There is no update with this identifier.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: update_not_found
+                  message: update request not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/quotes/latest:
+    get:
+      tags: [quotes]
+      operationId: getLatestQuote
+      summary: Get the latest quote of a currency pair
+      description: Returns the most recently obtained price of the pair.
+      parameters:
+        - name: base
+          in: query
+          required: true
+          description: Base currency.
+          schema:
+            $ref: "#/components/schemas/CurrencyCode"
+          example: EUR
+        - name: quote
+          in: query
+          required: true
+          description: Quote currency.
+          schema:
+            $ref: "#/components/schemas/CurrencyCode"
+          example: MXN
+      responses:
+        "200":
+          description: The latest quote of the pair.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+              example:
+                base: EUR
+                quote: MXN
+                price: "20.3348"
+                updated_at: "2026-10-05T14:45:26.796602Z"
+        "400":
+          description: The currency pair is not acceptable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                invalidCurrency:
+                  summary: Not an ISO 4217 currency code, or a parameter is missing
+                  value:
+                    error:
+                      code: invalid_currency
+                      message: 'quote currency: invalid currency code: ""'
+                invalidPair:
+                  summary: Base and quote currencies are the same
+                  value:
+                    error:
+                      code: invalid_pair
+                      message: "currency pair: base and quote currencies must differ: EUR"
+                unsupportedCurrency:
+                  summary: The service has no quotes for the currency
+                  value:
+                    error:
+                      code: unsupported_currency
+                      message: "currency is not supported: EUR/JPY"
+        "404":
+          description: The pair has not been updated successfully yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: quote_not_found
+                  message: the pair has no quote yet
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /healthz:
+    get:
+      tags: [service]
+      operationId: getHealth
+      summary: Liveness check
+      description: Reports that the process is up and able to serve requests.
+      responses:
+        "200":
+          description: The service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+
+components:
+  schemas:
+    CurrencyCode:
+      type: string
+      description: ISO 4217 currency code. Case-insensitive on input, upper case in responses.
+      pattern: "^[A-Za-z]{3}$"
+      example: EUR
+
+    Price:
+      type: string
+      description: |
+        Price of one unit of the base currency expressed in the quote
+        currency, as a decimal number in a string.
+      pattern: '^\d+(\.\d+)?$'
+      example: "20.3348"
+
+    UpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [base, quote]
+      properties:
+        base:
+          $ref: "#/components/schemas/CurrencyCode"
+        quote:
+          $ref: "#/components/schemas/CurrencyCode"
+
+    UpdateAccepted:
+      type: object
+      required: [update_id]
+      properties:
+        update_id:
+          type: string
+          format: uuid
+          description: Identifier to read the result of the update with.
+
+    Update:
+      type: object
+      required: [update_id, base, quote, status]
+      properties:
+        update_id:
+          type: string
+          format: uuid
+        base:
+          $ref: "#/components/schemas/CurrencyCode"
+        quote:
+          $ref: "#/components/schemas/CurrencyCode"
+        status:
+          type: string
+          description: |
+            * `pending` - accepted, not carried out yet;
+            * `completed` - the price is obtained;
+            * `failed` - the price could not be obtained after all attempts.
+          enum: [pending, completed, failed]
+        price:
+          allOf:
+            - $ref: "#/components/schemas/Price"
+          description: Present only when the status is `completed`.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the price was obtained (UTC). Present only when the status is `completed`.
+        error:
+          type: string
+          description: Why the update failed. Present only when the status is `failed`.
+
+    Quote:
+      type: object
+      required: [base, quote, price, updated_at]
+      properties:
+        base:
+          $ref: "#/components/schemas/CurrencyCode"
+        quote:
+          $ref: "#/components/schemas/CurrencyCode"
+        price:
+          $ref: "#/components/schemas/Price"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the price was obtained (UTC).
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              enum:
+                - malformed_request
+                - invalid_currency
+                - invalid_pair
+                - unsupported_currency
+                - invalid_id
+                - update_not_found
+                - quote_not_found
+                - internal_error
+            message:
+              type: string
+              description: Human-readable explanation.
+
+  responses:
+    InternalError:
+      description: Unexpected failure. Details are logged by the service and not exposed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: internal_error
+              message: internal server error

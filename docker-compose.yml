@@ -1,0 +1,40 @@
+# Runs the service together with its database:
+#
+#   docker compose up --build
+#
+# The API is then available at http://localhost:8080. Set HTTP_PORT to use
+# another host port.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: quotes
+      POSTGRES_PASSWORD: quotes
+      POSTGRES_DB: quotes
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # The service starts only after the database accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quotes -d quotes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  quotes:
+    build: .
+    environment:
+      # Credentials of the local database defined above; not a secret.
+      DATABASE_URL: postgres://quotes:quotes@postgres:5432/quotes?sslmode=disable
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Longer than SHUTDOWN_TIMEOUT (25s), so that Docker does not kill the
+    # service in the middle of its graceful shutdown.
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:

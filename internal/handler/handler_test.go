@@ -81,8 +81,34 @@ func (s *stubService) GetLatestQuote(_ context.Context, base, quote string) (dom
 }
 
 // serve sends one request to the API backed by svc and returns the response
-// together with everything the handler logged.
+// together with everything the handler logged. It also requires the
+// response to match the OpenAPI document, so every test that goes through
+// serve doubles as a contract test.
 func serve(t *testing.T, svc *stubService, method, target, body string) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+
+	request, recorder, logs := exchange(t, svc, method, target, body)
+	requireMatchesSpec(t, request, recorder)
+
+	return recorder, logs
+}
+
+// serveUndocumented is serve without the contract check. It is for requests
+// that are outside the API and are answered by the router itself, not by a
+// documented operation: unknown paths and unsupported methods.
+func serveUndocumented(t *testing.T, svc *stubService, method, target string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	_, recorder, _ := exchange(t, svc, method, target, "")
+
+	return recorder
+}
+
+func exchange(
+	t *testing.T,
+	svc *stubService,
+	method, target, body string,
+) (*http.Request, *httptest.ResponseRecorder, string) {
 	t.Helper()
 
 	var logs bytes.Buffer
@@ -93,7 +119,7 @@ func serve(t *testing.T, svc *stubService, method, target, body string) (*httpte
 
 	api.ServeHTTP(recorder, request)
 
-	return recorder, logs.String()
+	return request, recorder, logs.String()
 }
 
 func pendingResult() service.UpdateResult {
@@ -486,7 +512,16 @@ func TestHandler_GetLatestQuote(t *testing.T) {
 	}
 }
 
-func TestHandler_Routes(t *testing.T) {
+func TestHandler_Health(t *testing.T) {
+	t.Parallel()
+
+	got, _ := serve(t, &stubService{}, http.MethodGet, "/healthz", "")
+	assert.Equal(t, http.StatusOK, got.Code)
+	assert.JSONEq(t, `{"status":"ok"}`, got.Body.String())
+}
+
+// Requests outside the API never reach a handler: the router answers them.
+func TestHandler_RejectsRequestsOutsideTheAPI(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -495,12 +530,6 @@ func TestHandler_Routes(t *testing.T) {
 		target     string
 		wantStatus int
 	}{
-		{
-			name:       "health check",
-			method:     http.MethodGet,
-			target:     "/healthz",
-			wantStatus: http.StatusOK,
-		},
 		{
 			name:       "updates cannot be listed",
 			method:     http.MethodGet,
@@ -537,7 +566,7 @@ func TestHandler_Routes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, _ := serve(t, &stubService{}, tt.method, tt.target, "")
+			got := serveUndocumented(t, &stubService{}, tt.method, tt.target)
 			assert.Equal(t, tt.wantStatus, got.Code)
 		})
 	}
