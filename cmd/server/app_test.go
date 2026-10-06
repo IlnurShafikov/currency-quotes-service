@@ -388,3 +388,58 @@ func TestRun_FailsToStartWithoutDatabase(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "connect to database")
 }
+
+// echoingRateProvider starts a fake rate provider that answers for whatever
+// pair it is asked about, always with the same rate, and counts requests.
+func echoingRateProvider(t *testing.T) (providerURL string, requests *atomic.Int64) {
+	t.Helper()
+
+	requests = new(atomic.Int64)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+
+		query := r.URL.Query()
+		body := map[string]any{
+			"base":  query.Get("base"),
+			"rates": map[string]json.Number{query.Get("symbols"): "20.5806"},
+		}
+
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(server.Close)
+
+	return server.URL, requests
+}
+
+func TestService_SchedulerRefreshesQuotesWithoutClientRequests(t *testing.T) {
+	t.Parallel()
+
+	providerURL, providerRequests := echoingRateProvider(t)
+	baseURL := startService(t, providerURL, map[string]string{
+		// Long enough for the scheduler to run exactly once during the test:
+		// right after the start.
+		config.EnvSchedulerInterval: "1h",
+	})
+
+	// Every ordered pair of the three seeded currencies.
+	pairs := []string{
+		"base=EUR&quote=MXN",
+		"base=EUR&quote=USD",
+		"base=MXN&quote=EUR",
+		"base=MXN&quote=USD",
+		"base=USD&quote=EUR",
+		"base=USD&quote=MXN",
+	}
+
+	// No update is requested: the quotes must appear on their own.
+	for _, pair := range pairs {
+		require.Eventually(t, func() bool {
+			status, payload, err := call(t.Context(), http.MethodGet, baseURL+"/api/v1/quotes/latest?"+pair, "")
+
+			return err == nil && status == http.StatusOK && payload["price"] == "20.5806"
+		}, waitFor, tick, "no quote appeared for %s", pair)
+	}
+
+	assert.Equal(t, int64(len(pairs)), providerRequests.Load(), "each pair must be fetched exactly once")
+}

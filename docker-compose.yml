@@ -26,6 +26,9 @@ services:
     environment:
       # Credentials of the local database defined above; not a secret.
       DATABASE_URL: postgres://quotes:quotes@postgres:5432/quotes?sslmode=disable
+      # Uncomment to refresh quotes on a schedule, without waiting for a
+      # client to request an update. Off by default.
+      # SCHEDULER_INTERVAL: 1h
     ports:
       - "${HTTP_PORT:-8080}:8080"
     depends_on:

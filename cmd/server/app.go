@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +17,7 @@ import (
 	"github.com/IlnurShafikov/currency-quotes-service/internal/handler"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/provider"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/repository"
+	"github.com/IlnurShafikov/currency-quotes-service/internal/scheduler"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/service"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/system"
 	"github.com/IlnurShafikov/currency-quotes-service/internal/worker"
@@ -31,9 +33,10 @@ const (
 	idleTimeout       = time.Minute
 )
 
-// errWorkerStillRunning is returned when the background worker does not
-// stop within the shutdown timeout.
-var errWorkerStillRunning = errors.New("background worker did not stop in time")
+// errBackgroundStillRunning is returned when the background work (the
+// worker and, if enabled, the scheduler) does not stop within the shutdown
+// timeout.
+var errBackgroundStillRunning = errors.New("background work did not stop in time")
 
 // app is the assembled service: every adapter wired to the service layer,
 // plus the resources that have to be released on shutdown.
@@ -44,6 +47,8 @@ type app struct {
 	listener net.Listener
 	server   *http.Server
 	worker   *worker.Worker
+	// scheduler is nil when scheduled refreshing is turned off.
+	scheduler *scheduler.Scheduler
 }
 
 // newApp connects to the database, brings its schema up to date, wires the
@@ -126,6 +131,11 @@ func wire(ctx context.Context, cfg config.Config, log *slog.Logger, pool *pgxpoo
 		return nil, fmt.Errorf("create worker: %w", err)
 	}
 
+	refreshScheduler, err := newScheduler(cfg, quoteService, log)
+	if err != nil {
+		return nil, err
+	}
+
 	var listenConfig net.ListenConfig
 
 	listener, err := listenConfig.Listen(ctx, "tcp", cfg.HTTPAddr)
@@ -134,11 +144,12 @@ func wire(ctx context.Context, cfg config.Config, log *slog.Logger, pool *pgxpoo
 	}
 
 	return &app{
-		cfg:      cfg,
-		log:      log,
-		pool:     pool,
-		listener: listener,
-		worker:   backgroundWorker,
+		cfg:       cfg,
+		log:       log,
+		pool:      pool,
+		listener:  listener,
+		worker:    backgroundWorker,
+		scheduler: refreshScheduler,
 		server: &http.Server{
 			Handler:           handler.New(quoteService, log).Routes(),
 			ReadHeaderTimeout: readHeaderTimeout,
@@ -155,7 +166,7 @@ func (a *app) addr() string {
 	return a.listener.Addr().String()
 }
 
-// serve runs the HTTP server and the background worker until ctx is
+// serve runs the HTTP server and the background work until ctx is
 // cancelled, then shuts both down gracefully: the server finishes the
 // requests in flight and the worker finishes its current batch, within the
 // shutdown timeout. It returns nil after a clean shutdown.
@@ -169,13 +180,7 @@ func (a *app) serve(ctx context.Context) error {
 		serverErr <- a.server.Serve(a.listener)
 	}()
 
-	workerDone := make(chan struct{})
-
-	go func() {
-		defer close(workerDone)
-
-		a.worker.Run(ctx)
-	}()
+	backgroundDone := a.runBackground(ctx)
 
 	a.log.InfoContext(ctx, "service started", slog.String("addr", a.addr()))
 
@@ -184,7 +189,7 @@ func (a *app) serve(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 	case serveErr := <-serverErr:
-		// The server stopped on its own; take the worker down with it.
+		// The server stopped on its own; take the background work down with it.
 		err = fmt.Errorf("http server: %w", serveErr)
 
 		cancel()
@@ -201,14 +206,52 @@ func (a *app) serve(ctx context.Context) error {
 	}
 
 	select {
-	case <-workerDone:
+	case <-backgroundDone:
 		// Nothing uses the database any more.
 		a.pool.Close()
 	case <-shutdownCtx.Done():
-		err = errors.Join(err, errWorkerStillRunning)
+		err = errors.Join(err, errBackgroundStillRunning)
 	}
 
 	a.log.InfoContext(ctx, "service stopped")
 
 	return err
+}
+
+// newScheduler returns the scheduler that refreshes stale quotes, or nil if
+// no interval is configured and quotes are updated only on request.
+func newScheduler(cfg config.Config, quotes scheduler.Refresher, log *slog.Logger) (*scheduler.Scheduler, error) {
+	if cfg.SchedulerInterval == 0 {
+		return nil, nil
+	}
+
+	refreshScheduler, err := scheduler.New(quotes, cfg.SchedulerInterval, log)
+	if err != nil {
+		return nil, fmt.Errorf("create scheduler: %w", err)
+	}
+
+	return refreshScheduler, nil
+}
+
+// runBackground starts the worker and, if it is enabled, the scheduler. The
+// returned channel is closed once all of them have returned, which happens
+// after ctx is cancelled.
+func (a *app) runBackground(ctx context.Context) <-chan struct{} {
+	var running sync.WaitGroup
+
+	running.Go(func() { a.worker.Run(ctx) })
+
+	if a.scheduler != nil {
+		running.Go(func() { a.scheduler.Run(ctx) })
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		running.Wait()
+	}()
+
+	return done
 }

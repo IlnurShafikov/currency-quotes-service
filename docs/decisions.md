@@ -247,6 +247,26 @@ that lost its claim is rolled back.
 completed request, or the reverse.
 **Trade-off.** None worth noting.
 
+### Quotes can be refreshed on a schedule
+
+**Decision.** With `SCHEDULER_INTERVAL` set, a scheduler requests an update for
+every supported pair whose latest quote is at least one interval old or
+missing: once on start-up, then every interval. It is off by default.
+**Why.** Without it the latest quote of a pair is as old as the last request
+for it, and a freshly started service has no quotes at all. The scheduler is
+a third driving adapter next to the HTTP handler and the worker: it calls one
+service method and puts ordinary requests into the existing queue, so
+idempotency, retries and claiming work unchanged. Checking freshness first
+keeps several instances from repeating each other: an instance that finds a
+quote already refreshed does nothing.
+**Alternatives.** Refreshing every pair on every tick regardless of age, which
+multiplies provider calls by the number of instances. Fetching rates directly
+in the scheduler, which would duplicate what the worker does. A list of pairs
+in the configuration instead of every pair of supported currencies.
+**Trade-off.** Every ordered pair is refreshed, which grows quadratically with
+the number of currencies. While the provider is down, each tick spends a full
+set of attempts per pair.
+
 ### Shutdown lets a running batch finish
 
 **Decision.** On `SIGTERM` the worker starts no new batch but lets the
