@@ -77,6 +77,15 @@ docker compose down -v
 > On Windows run the `curl` commands in Git Bash, or use `curl.exe` in
 > PowerShell, where `curl` is an alias of another command.
 
+### Postman
+
+The same requests are available as a Postman collection:
+[postman/currency-quotes.postman_collection.json](postman/currency-quotes.postman_collection.json).
+Import the file and run the **Scenario** folder top to bottom. The first
+request stores the update identifier in a collection variable and the second
+one uses it, so nothing has to be copied by hand. The **Errors** folder shows
+what the service answers to invalid requests.
+
 ## API
 
 The full contract is in [api/openapi.yaml](api/openapi.yaml) (OpenAPI 3.0). Paste

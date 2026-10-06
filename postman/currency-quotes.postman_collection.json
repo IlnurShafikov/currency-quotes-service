@@ -1,0 +1,379 @@
+{
+  "info": {
+    "name": "Currency Quotes Service",
+    "description": "Requests for the currency quotes service.\n\nStart the service with `docker compose up --build`, then run the **Scenario** folder top to bottom, or run the whole collection.\n\nThe first request stores the identifier of the update in the `update_id` collection variable, and the second one uses it, so nothing has to be copied by hand.\n\nChange the `base_url` collection variable if the service listens elsewhere.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "update_id",
+      "value": ""
+    },
+    {
+      "key": "poll_attempts",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "Scenario",
+      "description": "The three operations of the service, in the order a client uses them.",
+      "item": [
+        {
+          "name": "1. Request a quote update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('update is accepted', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('response carries the update id', function () {",
+                  "    pm.expect(body.update_id).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('Location points at the update', function () {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.eql('/api/v1/quotes/updates/' + body.update_id);",
+                  "});",
+                  "",
+                  "// The next request reads the update by this id.",
+                  "pm.collectionVariables.set('update_id', body.update_id);",
+                  "pm.collectionVariables.set('poll_attempts', '0');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Registers a request to update the EUR/MXN quote. The service answers right away; the price is fetched in the background.\n\nWhile an update for the pair is pending, sending this request again returns the same identifier.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base\": \"EUR\",\n  \"quote\": \"MXN\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/quotes/updates"
+          }
+        },
+        {
+          "name": "2. Get the update by id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('update is found', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('update has a known status', function () {",
+                  "    pm.expect(body.status).to.be.oneOf(['pending', 'completed', 'failed']);",
+                  "});",
+                  "",
+                  "// The background worker needs a moment. When the collection is run as",
+                  "// a whole, this request repeats until the update is no longer pending.",
+                  "// Sent by hand, it simply shows the current state: send it again.",
+                  "const attempts = Number(pm.collectionVariables.get('poll_attempts'));",
+                  "",
+                  "if (body.status === 'pending' && attempts < 20) {",
+                  "    pm.collectionVariables.set('poll_attempts', String(attempts + 1));",
+                  "    setTimeout(function () {}, 500);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('poll_attempts', '0');",
+                  "",
+                  "    pm.test('update is completed', function () {",
+                  "        pm.expect(body.status).to.eql('completed');",
+                  "    });",
+                  "",
+                  "    pm.test('price is a decimal number in a string', function () {",
+                  "        pm.expect(body.price).to.match(/^\\d+(\\.\\d+)?$/);",
+                  "    });",
+                  "",
+                  "    pm.test('time of the update is present', function () {",
+                  "        pm.expect(body.updated_at).to.be.a('string').and.not.empty;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Returns the state of the update requested in step 1: `pending`, `completed` or `failed`. Once it is completed, the response carries the price and the time it was obtained.",
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/quotes/updates/{{update_id}}"
+          }
+        },
+        {
+          "name": "3. Get the latest quote",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('quote is found', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('quote is for the requested pair', function () {",
+                  "    pm.expect(body.base).to.eql('EUR');",
+                  "    pm.expect(body.quote).to.eql('MXN');",
+                  "});",
+                  "",
+                  "pm.test('price is a decimal number in a string', function () {",
+                  "    pm.expect(body.price).to.match(/^\\d+(\\.\\d+)?$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "Returns the most recently obtained price of EUR/MXN.",
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/quotes/latest?base=EUR&quote=MXN",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "quotes", "latest"],
+              "query": [
+                {
+                  "key": "base",
+                  "value": "EUR"
+                },
+                {
+                  "key": "quote",
+                  "value": "MXN"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Errors",
+      "description": "What the service answers to requests it cannot fulfil. Every error has the same shape: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.",
+      "item": [
+        {
+          "name": "Currency is not supported",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 unsupported_currency', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('unsupported_currency');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "JPY is a real currency, but the service does not provide quotes for it.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base\": \"EUR\",\n  \"quote\": \"JPY\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/quotes/updates"
+          }
+        },
+        {
+          "name": "Currency does not exist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 invalid_currency', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('invalid_currency');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "XYZ is not an ISO 4217 currency code.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base\": \"EUR\",\n  \"quote\": \"XYZ\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/quotes/updates"
+          }
+        },
+        {
+          "name": "Base and quote currencies are the same",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 invalid_pair', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('invalid_pair');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base\": \"EUR\",\n  \"quote\": \"EUR\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/quotes/updates"
+          }
+        },
+        {
+          "name": "Body is not the expected JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 malformed_request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('malformed_request');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "The body has a field the service does not know. Unknown fields are rejected, so that a typo in a field name is not silently ignored.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base\": \"EUR\",\n  \"qoute\": \"MXN\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/quotes/updates"
+          }
+        },
+        {
+          "name": "Update id is not a UUID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 invalid_id', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('invalid_id');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/quotes/updates/42"
+          }
+        },
+        {
+          "name": "Update does not exist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 update_not_found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "    pm.expect(pm.response.json().error.code).to.eql('update_not_found');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "description": "A well-formed identifier that the service never issued.",
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/quotes/updates/00000000-0000-7000-8000-000000000000"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Service",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('service is up', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/healthz"
+          }
+        }
+      ]
+    }
+  ]
+}

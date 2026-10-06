@@ -9,6 +9,7 @@
 *.md
 api
 docs
+postman
 bin
 Dockerfile
 docker-compose.yml
